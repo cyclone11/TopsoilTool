@@ -1,0 +1,12 @@
+﻿# 编译输出
+bin/
+obj/
+.vs/
+*.user
+*.suo
+
+# 游戏程序集与发行包
+*.dll
+*.pdb
+*.zip
+api-dump.txt

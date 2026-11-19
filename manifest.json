@@ -1,0 +1,18 @@
+{
+  "id": "TopsoilTool",
+  "version": "0.1.0",
+  "display_name": "表土工具",
+  "description_short": "Shift+T 框选地面，把最上层地形材料立即换成土。",
+  "description_long": "按 Shift+T 激活，拖拽框选一块地面，合规格子以白色高亮；松开后立即把每格最上方一层地形材料替换为土，不产生运输或挖掘任务。",
+  "authors": [
+    "you"
+  ],
+  "min_game_version": "0.8.8",
+  "primary_dlls": [
+    "TopsoilTool.dll"
+  ],
+  "non_locking_dll_load": true,
+  "can_add_to_saved_game": true,
+  "can_remove_from_saved_game": true,
+  "primary_mod_class_name": "TopsoilToolMod"
+}

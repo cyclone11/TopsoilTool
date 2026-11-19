@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AssemblyName>TopsoilTool</AssemblyName>
+    <RootNamespace>TopsoilTool</RootNamespace>
+    <Version>0.1.0</Version>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <CaptainIndustryManagedPath Condition="'$(CaptainIndustryManagedPath)' == '' and '$(CAPTAIN_INDUSTRY_MANAGED_PATH)' != ''">$(CAPTAIN_INDUSTRY_MANAGED_PATH)</CaptainIndustryManagedPath>
+    <CaptainIndustryManagedPath Condition="'$(CaptainIndustryManagedPath)' == '' and '$(COI_ROOT)' != ''">$(COI_ROOT)\Captain of Industry_Data\Managed</CaptainIndustryManagedPath>
+    <CaptainIndustryManagedPath Condition="'$(CaptainIndustryManagedPath)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Captain of Industry\Captain of Industry_Data\Managed</CaptainIndustryManagedPath>
+    <OutputPath>bin\$(Configuration)\TopsoilTool\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Mafi"><HintPath>$(CaptainIndustryManagedPath)\Mafi.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Mafi.Base"><HintPath>$(CaptainIndustryManagedPath)\Mafi.Base.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Mafi.Core"><HintPath>$(CaptainIndustryManagedPath)\Mafi.Core.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Mafi.Unity"><HintPath>$(CaptainIndustryManagedPath)\Mafi.Unity.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(CaptainIndustryManagedPath)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.ImageConversionModule"><HintPath>$(CaptainIndustryManagedPath)\UnityEngine.ImageConversionModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="netstandard"><HintPath>$(CaptainIndustryManagedPath)\netstandard.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="manifest.json;README.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="ValidateGameReferences" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(CaptainIndustryManagedPath)\Mafi.dll')"
+           Text="找不到 Mafi.dll。请设置 CaptainIndustryManagedPath 指向游戏的 Managed 目录。" />
+  </Target>
+
+</Project>
