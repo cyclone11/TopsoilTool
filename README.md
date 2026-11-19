@@ -167,3 +167,7 @@ dotnet build -c Release -p:CaptainIndustryManagedPath="...\Managed"
 - [官方 Modding 文档](https://coigame.com/Modding)
 - [Key bindings 文档](https://coigame.com/Modding/Key-Bindings)
 - [CaptainOfCheats 源码（地形/工具 API 参考）](https://github.com/ArgonCrystal/CaptainOfCheats)
+
+## 许可证
+
+本项目采用 [MIT](LICENSE) 许可证。
