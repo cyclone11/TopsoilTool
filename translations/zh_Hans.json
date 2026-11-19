@@ -1,0 +1,5 @@
+[
+  ["TopsoilTool.Kb_Toggle__label", "表层换土"],
+  ["TopsoilTool.Result", "已换土 {0}/{1} 个 4×4 规划格，清理装饰石头 {2} 块。"],
+  ["TopsoilTool.Empty", "选区内没有需要更换的表土或清理的装饰石头。"]
+]

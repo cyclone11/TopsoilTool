@@ -1,11 +1,11 @@
 {
   "id": "TopsoilTool",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "display_name": "表土工具",
-  "description_short": "Shift+T 框选地面，把最上层地形材料立即换成土。",
-  "description_long": "按 Shift+T 激活，拖拽框选一块地面，合规格子以白色高亮；松开后立即把每格最上方一层地形材料替换为土，不产生运输或挖掘任务。",
+  "description_short": "Turn the top layer of flat terrain into dirt. / 把平地表层换成土。",
+  "description_long": "Press Shift+T to select flat terrain in 4×4 blocks. Replace the top layer with dirt at the same elevation and clear decorative rocks in one step.\n\n按 Shift+T 框选 4×4 规划格，将平地表层换成土，保留原标高，同时清理装饰石头。",
   "authors": [
-    "you"
+    "cyclone11"
   ],
   "min_game_version": "0.8.8",
   "primary_dlls": [

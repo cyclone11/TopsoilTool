@@ -1,68 +1,165 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using Mafi;
 using Mafi.Base;
 using Mafi.Core.Products;
 using Mafi.Core.Prototypes;
 using Mafi.Core.Terrain;
+using Mafi.Core.Terrain.Designation;
+using Mafi.Core.Terrain.Props;
 
 namespace TopsoilTool
 {
-    /// <summary>
-    /// 地形换土逻辑。
-    /// 已验证：LooseProductQuantity.ToTerrainThickness()、TerrainTile.DepositMaterialOnTop(...)
-    /// 待确认：按坐标取 TerrainTile、读取/移除顶层材料。
-    /// </summary>
-    internal static class TerrainTopsoil
+    [GlobalDependency(RegistrationMode.AsSelf)]
+    public sealed class TerrainTopsoil
     {
-        public static int Apply(TerrainManager terrain, ProtosDb protos, RectangleTerrainArea2i area)
+        internal const int BlockSize = TerrainDesignation.SIZE_TILES;
+        internal static readonly RelTile2i BlockExtent = new(BlockSize, BlockSize);
+
+        private static readonly ThicknessTilesF Depth = 1.0.TilesThick();
+        private readonly TerrainManager m_terrain;
+        private readonly TerrainOccupancyManager m_occupancy;
+        private readonly TerrainPropsManager m_props;
+        private readonly TerrainMaterialProto m_dirt;
+        private readonly ConcurrentQueue<(RectangleTerrainArea2i Area, Action<int, int, int> Completed)> m_pending = new();
+
+        public TerrainTopsoil(TerrainManager terrain, TerrainOccupancyManager occupancy,
+            TerrainPropsManager props, ProtosDb protos)
         {
-            // 土：游戏里的散料产品（dirt）。TODO(API): 确认 Ids.Products.Dirt 是否存在。
-            LooseProductProto dirt = protos.GetOrThrow<LooseProductProto>(Ids.Products.Dirt);
-            TerrainMaterialThickness dirtThickness =
-                new LooseProductQuantity(dirt, Quantity.MaxValue).ToTerrainThickness();
+            m_terrain = terrain;
+            m_occupancy = occupancy;
+            m_props = props;
+            m_dirt = protos.GetOrThrow<LooseProductProto>(Ids.Products.Dirt).TerrainMaterial.Value;
+        }
 
+        internal void Enqueue(RectangleTerrainArea2i area, Action<int, int, int> completed)
+        {
+            m_pending.Enqueue((area, completed));
+        }
+
+        internal void ProcessPending()
+        {
+            if (!m_pending.TryDequeue(out var job))
+                return;
+
+            int selected = 0;
             int changed = 0;
-
-            // TODO(API): 确认 RectangleTerrainArea2i 的 Min/Max 成员名（Min/Max/MinCoord/MaxCoord）。
-            for (int y = area.Min.Y; y <= area.Max.Y; y++)
+            foreach (Tile2i origin in EnumerateBlockOrigins(job.Area))
             {
-                for (int x = area.Min.X; x <= area.Max.X; x++)
-                {
-                    var coord = new Tile2i(x, y);
-
-                    // TODO(API): 确认取瓦片的方法（TerrainManager.GetTile / TryGetTile）。
-                    TerrainTile? tile = terrain.GetTile(coord);
-                    if (tile == null) continue;
-
-                    // TODO(API): 确认海洋判断签名（TerrainManager.IsOcean(Tile2iIndex)）。
-                    if (terrain.IsOcean(coord)) continue;
-
-                    ReplaceTopWith(tile, dirtThickness);
+                selected++;
+                if (CanConvertBlock(origin) && ReplaceBlock(origin))
                     changed++;
+            }
+
+            int rocks = RemoveDecorativeRocks(job.Area);
+            Log.Info($"[TopsoilTool] Changed {changed}/{selected} blocks (4×4), removed {rocks} decorative rocks.");
+            job.Completed(changed, selected, rocks);
+        }
+
+        internal static IEnumerable<Tile2i> EnumerateBlockOrigins(RectangleTerrainArea2i area)
+        {
+            for (int y = 0; y < area.Size.Y; y += BlockSize)
+            {
+                for (int x = 0; x < area.Size.X; x += BlockSize)
+                    yield return area.Origin + new RelTile2i(x, y);
+            }
+        }
+
+        internal bool IsBlockInBounds(Tile2i origin)
+        {
+            return !m_terrain.IsOffLimitsOrInvalid(origin)
+                && !m_terrain.IsOffLimitsOrInvalid(origin + BlockExtent - RelTile2i.One)
+                && m_terrain.IsValidCoord(origin + BlockExtent);
+        }
+
+        internal bool CanConvertBlock(Tile2i origin)
+        {
+            if (!IsBlockInBounds(origin))
+                return false;
+
+            foreach (var tile in new RectangleTerrainArea2i(origin, BlockExtent).EnumerateTilesAndIndices(m_terrain))
+            {
+                var index = tile.Index;
+                if (m_terrain.IsOcean(index) || !m_terrain.IsFlat(index)
+                    || m_terrain.HasTileSurface(index) || m_occupancy.IsOccupiedAt(index))
+                {
+                    return false;
                 }
             }
 
+            return true;
+        }
+
+        private bool ReplaceBlock(Tile2i origin)
+        {
+            bool changed = false;
+            var dirt = m_dirt.SlimId;
+            foreach (var tile in new RectangleTerrainArea2i(origin, BlockExtent).EnumerateTilesAndIndices(m_terrain))
+            {
+                var top = m_terrain.GetFirstLayerSlimOrNoneNoBedrock(tile.Index);
+                if (!top.HasValue || top.SlimId != dirt || top.Thickness < Depth)
+                {
+                    Replace(m_terrain, tile, dirt);
+                    changed = true;
+                }
+            }
             return changed;
         }
 
-        /// <summary>
-        /// 把一格的最上层地形材料替换成土，厚度保持不变、高度不变。
-        /// </summary>
-        private static void ReplaceTopWith(TerrainTile tile, TerrainMaterialThickness dirt)
+        private int RemoveDecorativeRocks(RectangleTerrainArea2i area)
         {
-            // TODO(API): 以下两步需要按实际 API 校准，二选一：
-            //
-            // 方案 A（油漆式，推荐）：直接改顶层材料，不动厚度。
-            //   tile.SetSurfaceMaterial(dirt.Material);  // 名称待确认
-            //
-            // 方案 B（移除 + 铺土）：
-            //   TerrainMaterialThickness top = tile.GetTopMaterial();      // 名称待确认
-            //   tile.RemoveMaterialFromTop(top.Thickness);                  // 名称待确认
-            //   tile.DepositMaterialOnTop(dirt.Material, top.Thickness,
-            //       doNotRaiseEvents: true, doNotDisruptTerrain: true, doNotChangeHeight: true);
-            //
-            // 目前先抛异常，避免误以为已实现。
-            throw new System.NotImplementedException(
-                "TerrainTopsoil.ReplaceTopWith: 需要按游戏程序集校准顶层材料 API（见 README 第 5 节）。");
+            int removed = 0;
+            foreach (Tile2i tile in area.EnumerateTiles())
+            {
+                if (!m_props.TerrainTileToProp.TryGetValue(tile.AsSlim, out var id)
+                    || !m_props.TerrainProps.TryGetValue(id, out var prop)
+                    || !area.ContainsTile(prop.Position.Tile2i)
+                    || !IsDecorativeRock(prop.Proto))
+                {
+                    continue;
+                }
+
+                if (m_props.TryRemoveProp(id))
+                    removed++;
+            }
+            return removed;
+        }
+
+        internal static bool IsDecorativeRock(TerrainPropProto proto)
+        {
+            var id = proto.Id;
+            return id == Ids.TerrainProps.Stone01
+                || id == Ids.TerrainProps.Stone02
+                || id == Ids.TerrainProps.Stone03
+                || id == Ids.TerrainProps.StoneSharp01;
+        }
+
+        internal static void Replace(TerrainManager terrain, Tile2iAndIndex tile, TerrainMaterialSlimId dirt)
+        {
+            var top = terrain.GetFirstLayerSlimOrNoneNoBedrock(tile.Index);
+            if (!top.HasValue)
+            {
+                terrain.DumpMaterial_NoHeightChange(tile, new TerrainMaterialThicknessSlim(dirt, Depth));
+                return;
+            }
+
+            if (top.SlimId != dirt)
+                terrain.ConvertMaterialInFirstLayer(tile, dirt, Depth, ThicknessTilesF.Zero);
+
+            // Dirt stays on top as each thin underlying layer is converted and merged into it.
+            var remaining = Depth - terrain.GetFirstLayerSlimOrNoneNoBedrock(tile.Index).Thickness;
+            while (!remaining.IsNotPositive)
+            {
+                if (!terrain.GetSecondLayerSlimOrNoneNoBedrock(tile.Index).HasValue)
+                {
+                    terrain.DumpMaterial_NoHeightChange(tile, new TerrainMaterialThicknessSlim(dirt, remaining));
+                    return;
+                }
+
+                terrain.ConvertMaterialInSecondLayer(tile, dirt, remaining, ThicknessTilesF.Zero);
+                remaining = Depth - terrain.GetFirstLayerSlimOrNoneNoBedrock(tile.Index).Thickness;
+            }
         }
     }
 }

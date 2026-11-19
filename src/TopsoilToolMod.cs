@@ -1,31 +1,61 @@
 using Mafi;
+using Mafi.Collections;
+using Mafi.Core.Game;
 using Mafi.Core.Mods;
 using Mafi.Core.Prototypes;
+using Mafi.Core.Simulation;
+using Mafi.Unity;
+using Mafi.Unity.InputControl;
 
 namespace TopsoilTool
 {
-    /// <summary>
-    /// 模组入口。因为要注册 UI 工具/快捷键，直接实现 IMod（不用 DataOnlyMod）。
-    /// </summary>
     public sealed class TopsoilToolMod : IMod
     {
-        public string Name => "TopsoilTool";
-        public int Version => 1;
-        public bool IsUiOnly => false;
+        private ISimLoopEvents? m_simEvents;
+        private TerrainTopsoil? m_topsoil;
+        private TopsoilKeyBindings? m_keyBindings;
 
-        public void Initialize(DependencyResolver resolver, bool gameWasLoaded)
+        public TopsoilToolMod(ModManifest manifest)
         {
-            Log.Info("[TopsoilTool] initialized");
+            Manifest = manifest;
+            JsonConfig = new ModJsonConfig(this);
         }
 
-        public void RegisterPrototypes(ProtoRegistrator registrator)
+        public ModManifest Manifest { get; }
+        public ModJsonConfig JsonConfig { get; }
+        bool IMod.IsUiOnly => false;
+        Option<IConfig> IMod.ModConfig => Option.None;
+
+        void IMod.RegisterPrototypes(ProtoRegistrator registrator)
         {
-            // 本模组不新增原型。
+            // Register the result texts while the game is collecting this mod's translations.
+            _ = TopsoilToolController.ResultText;
+            _ = TopsoilToolController.EmptyText;
         }
 
-        public void RegisterDependencies(DependencyResolverBuilder depBuilder, ProtosDb protosDb, bool wasLoaded)
+        void IMod.RegisterDependencies(DependencyResolverBuilder builder, ProtosDb protos, bool wasLoaded) { }
+        void IMod.EarlyInit(DependencyResolver resolver) { }
+        void IMod.MigrateJsonConfig(VersionSlim savedVersion, Dict<string, object> savedValues) { }
+
+        void IMod.Initialize(DependencyResolver resolver, bool gameWasLoaded)
         {
-            // 控制器和快捷键类都带 [GlobalDependency]，游戏会自动创建，无需手动注册。
+            var input = resolver.TryResolve<IUnityInputMgr>().ValueOrNull;
+            if (input == null)
+                return;
+
+            m_simEvents = resolver.Resolve<ISimLoopEvents>();
+            m_topsoil = resolver.Resolve<TerrainTopsoil>();
+            m_simEvents.UpdateAfterCmdProc.AddNonSaveable(this, m_topsoil.ProcessPending);
+
+            m_keyBindings = new TopsoilKeyBindings(this, resolver.Resolve<IShortcutsRegistry>(), input,
+                resolver.Resolve<TopsoilToolController>());
+        }
+
+        public void Dispose()
+        {
+            m_keyBindings?.Dispose();
+            if (m_simEvents != null && m_topsoil != null)
+                m_simEvents.UpdateAfterCmdProc.RemoveNonSaveable(this, m_topsoil.ProcessPending);
         }
     }
 }
